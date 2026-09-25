@@ -14,7 +14,6 @@ import { readFile, stat, utimes } from 'node:fs/promises'
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { createRequire, isBuiltin } from 'node:module'
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { Rolldown, type TsdownPlugin, type UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 import { optionalStringArray } from './modules/src/client/manifest.ts'
@@ -80,7 +79,28 @@ const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
  */
 const SKIP_WORKSPACE_BUILD: UserConfig = { entry: '' }
 
-const REPOSITORY_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+/**
+ * Repository root, located by walking up from the working directory to the
+ * nearest `pnpm-workspace.yaml`: a workspace build evaluates this preset with
+ * the repository root as `process.cwd()`, a filtered package build with the
+ * package directory. `import.meta.url` cannot locate it, because tsdown's
+ * non-native config loaders evaluate a compiled copy of this preset.
+ * @returns the absolute repository root path.
+ * @throws {Error} when no ancestor directory holds `pnpm-workspace.yaml`.
+ */
+function repositoryRoot(): string {
+  let dir = process.cwd()
+  while (!existsSync(resolvePath(dir, 'pnpm-workspace.yaml'))) {
+    const parent = dirname(dir)
+    if (parent === dir) {
+      throw new Error('tsdown: no pnpm-workspace.yaml above the working directory marks the repository root')
+    }
+    dir = parent
+  }
+  return dir
+}
+
+const REPOSITORY_ROOT = repositoryRoot()
 
 /** Rebase a physical lib-relative source onto a browser URL that mirrors the repository directories. */
 function browserSourcePath(source: string, sourcemapPath: string): string {
